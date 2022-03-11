@@ -190,16 +190,18 @@ class SQLiteSession(Session):
 
     async def get_all_dc(self) -> List[DataCenter]:
         c = self._cursor()
-        res = []
-        for (id, ipv4, ipv6, port, auth) in c.execute('select * from datacenter'):
-            res.append(DataCenter(
+        return [
+            DataCenter(
                 id=id,
                 ipv4=int(ipaddress.ip_address(ipv4)),
                 ipv6=int(ipaddress.ip_address(ipv6)) if ipv6 else None,
                 port=port,
                 auth=auth,
-            ))
-        return res
+            )
+            for (id, ipv4, ipv6, port, auth) in c.execute(
+                'select * from datacenter'
+            )
+        ]
 
     async def set_state(self, state: SessionState):
         c = self._cursor()
@@ -263,7 +265,7 @@ class SQLiteSession(Session):
     @staticmethod
     def _create_table(c, *definitions):
         for definition in definitions:
-            c.execute('create table {}'.format(definition))
+            c.execute(f'create table {definition}')
 
     def _cursor(self):
         """Asserts that the connection is open and returns a cursor"""

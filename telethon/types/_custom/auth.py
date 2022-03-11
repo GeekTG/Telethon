@@ -49,15 +49,12 @@ class SentCode:
         The `CodeType` which will be sent if `client.send_code_request`
         is used again after `timeout` seconds have elapsed. It may be `None`.
         """
-        if not self._code.next_type:
-            return None
-
         return {
             _tl.auth.CodeTypeSms: CodeType.SMS,
             _tl.auth.CodeTypeCall: CodeType.CALL,
             _tl.auth.CodeTypeFlashCall: CodeType.FLASH_CALL,
             _tl.auth.CodeTypeMissedCall: CodeType.MISSED_CALL,
-        }[type(self._code.next_type)]
+        }[type(self._code.next_type)] if self._code.next_type else None
 
     @property
     def timeout(self):
@@ -73,10 +70,15 @@ class SentCode:
 
         If you need the original timeout, call `round` on the value as soon as possible.
         """
-        if not self._code.timeout:
-            return None
-
-        return max(0.0, (self._start + self._code.timeout) - asyncio.get_running_loop().time())
+        return (
+            max(
+                0.0,
+                (self._start + self._code.timeout)
+                - asyncio.get_running_loop().time(),
+            )
+            if self._code.timeout
+            else None
+        )
 
     @property
     def length(self):
@@ -113,8 +115,9 @@ class SentCode:
             numbers = ''.join(c for c in code if c.isdigit())
             return re.match(f'^{pattern}$', numbers) is not None
 
-        if isinstance(self._code.type, _tl.auth.SentCodeTypeMissedCall):
-            if not code.startswith(self._code.type.prefix):
-                return False
+        if isinstance(
+            self._code.type, _tl.auth.SentCodeTypeMissedCall
+        ) and not code.startswith(self._code.type.prefix):
+            return False
 
         return len(code) == self._code.type.length

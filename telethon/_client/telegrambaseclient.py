@@ -342,13 +342,7 @@ def set_proxy(self: 'TelegramClient', proxy: typing.Union[tuple, dict]):
 
     self._proxy = proxy
 
-    # While `await client.connect()` passes new proxy on each new call,
-    # auto-reconnect attempts use already set up `_connection` inside
-    # the `_sender`, so the only way to change proxy between those
-    # is to directly inject parameters.
-
-    connection = getattr(self._sender, "_connection", None)
-    if connection:
+    if connection := getattr(self._sender, "_connection", None):
         if isinstance(connection, conns.TcpMTProxy):
             connection._ip = proxy[0]
             connection._port = proxy[1]

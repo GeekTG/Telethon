@@ -18,11 +18,7 @@ async def inline_query(
         offset: str = None,
         geo_point: '_tl.GeoPoint' = None) -> _custom.InlineResults:
     bot = await self._get_input_peer(bot)
-    if dialog:
-        peer = await self._get_input_peer(dialog)
-    else:
-        peer = _tl.InputPeerEmpty()
-
+    peer = await self._get_input_peer(dialog) if dialog else _tl.InputPeerEmpty()
     try:
         result = await self(_tl.fn.messages.GetInlineBotResults(
             bot=bot,

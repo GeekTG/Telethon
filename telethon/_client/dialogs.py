@@ -120,10 +120,8 @@ class _DraftsIter(requestiter.RequestIter):
             items = r.updates
         else:
             peers = []
-            for entity in entities:
-                peers.append(_tl.InputDialogPeer(
-                    await self.client._get_input_peer(entity)))
-
+            peers.extend(_tl.InputDialogPeer(
+                    await self.client._get_input_peer(entity)) for entity in entities)
             r = await self.client(_tl.fn.messages.GetPeerDialogs(peers))
             items = r.dialogs
 
@@ -184,11 +182,7 @@ async def delete_dialog(
 ):
     # If we have enough information (`Dialog.delete` gives it to us),
     # then we know we don't have to kick ourselves in deactivated chats.
-    if isinstance(entity, _tl.Chat):
-        deactivated = entity.deactivated
-    else:
-        deactivated = False
-
+    deactivated = entity.deactivated if isinstance(entity, _tl.Chat) else False
     entity = await self._get_input_peer(dialog)
     ty = helpers._entity_type(entity)
     if ty == helpers._EntityType.CHANNEL:

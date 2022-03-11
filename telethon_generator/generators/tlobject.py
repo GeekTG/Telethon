@@ -235,10 +235,11 @@ def _write_class_init(tlobject, kind, type_constructors, builder):
             builder.writeln('{}: {}', a.name, a.type_hint())
 
         # Convert the args to string parameters, flags having =None
-        args = ['{}: {}{}'.format(
-            a.name, a.type_hint(), '=None' if a.is_flag or a.can_be_inferred else '')
+        args = [
+            f"{a.name}: {a.type_hint()}{'=None' if a.is_flag or a.can_be_inferred else ''}"
             for a in tlobject.real_args
         ]
+
 
         if any(a.name in dir(builtins) for a in tlobject.real_args):
             builder.writeln('# noinspection PyShadowingBuiltins')
@@ -253,63 +254,66 @@ def _write_class_init(tlobject, kind, type_constructors, builder):
 
 
 def _write_resolve(tlobject, builder):
-    if tlobject.is_function and any(
-        (arg.can_be_inferred
+    if not tlobject.is_function or not any(
+        (
+            arg.can_be_inferred
             or arg.type in AUTO_CASTS
-            or ((arg.name, arg.type) in NAMED_AUTO_CASTS and tlobject.fullname not in NAMED_BLACKLIST))
+            or (
+                (arg.name, arg.type) in NAMED_AUTO_CASTS
+                and tlobject.fullname not in NAMED_BLACKLIST
+            )
+        )
         for arg in tlobject.real_args
     ):
-        builder.writeln('async def _resolve(self, client, utils):')
-        builder.writeln('r = {}')  # hold replacements
+        return
+    builder.writeln('async def _resolve(self, client, utils):')
+    builder.writeln('r = {}')  # hold replacements
 
-        for arg in tlobject.real_args:
-            if arg.can_be_inferred:
-                builder.writeln('if self.{} is None:', arg.name)
+    for arg in tlobject.real_args:
+        if arg.can_be_inferred:
+            builder.writeln('if self.{} is None:', arg.name)
 
-                # Currently the only argument that can be
-                # inferred are those called 'random_id'
-                if arg.name == 'random_id':
+            if arg.name != 'random_id':
+                raise ValueError('Cannot infer a value for ', arg)
+
                     # Endianness doesn't really matter, and 'big' is shorter
-                    code = "int.from_bytes(os.urandom({}), 'big', signed=True)" \
-                        .format(8 if arg.type == 'long' else 4)
+            code = f"int.from_bytes(os.urandom({8 if arg.type == 'long' else 4}), 'big', signed=True)"
 
-                    if arg.is_vector:
-                        # Currently for the case of "messages.forwardMessages"
-                        # Ensure we can infer the length from id:Vector<>
-                        if not next(a for a in tlobject.real_args if a.name == 'id').is_vector:
-                            raise ValueError('Cannot infer list of random ids for ', tlobject)
-
-                        code = '[{} for _ in range(len(self.id))]'.format(code)
-
-                    builder.writeln("r['{}'] = {}", arg.name, code)
-                else:
-                    raise ValueError('Cannot infer a value for ', arg)
-
-                builder.end_block()
-                continue
-
-            ac = AUTO_CASTS.get(arg.type)
-            if not ac:
-                ac = NAMED_AUTO_CASTS.get((arg.name, arg.type))
-                if not ac:
-                    continue
-
-            if arg.is_flag:
-                builder.writeln('if self.{}:', arg.name)
 
             if arg.is_vector:
-                builder.writeln("r['{}'] = []", arg.name)
-                builder.writeln('for x in self.{0}:', arg.name)
-                builder.writeln("r['{}'].append({})", arg.name, ac.format('x'))
-                builder.end_block()
-            else:
-                builder.writeln("r['{}'] = {}", arg.name, ac.format('self.' + arg.name))
+                # Currently for the case of "messages.forwardMessages"
+                # Ensure we can infer the length from id:Vector<>
+                if not next(a for a in tlobject.real_args if a.name == 'id').is_vector:
+                    raise ValueError('Cannot infer list of random ids for ', tlobject)
 
-            if arg.is_flag:
-                builder.end_block()
+                code = f'[{code} for _ in range(len(self.id))]'
 
-        builder.writeln('return dataclasses.replace(self, **r)')
-        builder.end_block()
+            builder.writeln("r['{}'] = {}", arg.name, code)
+            builder.end_block()
+            continue
+
+        ac = AUTO_CASTS.get(arg.type)
+        if not ac:
+            ac = NAMED_AUTO_CASTS.get((arg.name, arg.type))
+        if not ac:
+            continue
+
+        if arg.is_flag:
+            builder.writeln('if self.{}:', arg.name)
+
+        if arg.is_vector:
+            builder.writeln("r['{}'] = []", arg.name)
+            builder.writeln('for x in self.{0}:', arg.name)
+            builder.writeln("r['{}'].append({})", arg.name, ac.format('x'))
+            builder.end_block()
+        else:
+            builder.writeln("r['{}'] = {}", arg.name, ac.format('self.' + arg.name))
+
+        if arg.is_flag:
+            builder.end_block()
+
+    builder.writeln('return dataclasses.replace(self, **r)')
+    builder.end_block()
 
 
 def _write_to_bytes(tlobject, builder):
@@ -354,7 +358,7 @@ def _write_from_reader(tlobject, builder):
     builder.writeln('@classmethod')
     builder.writeln('def _from_reader(cls, reader):')
     for arg in tlobject.args:
-        _write_arg_read_code(builder, arg, tlobject, name='_' + arg.name)
+        _write_arg_read_code(builder, arg, tlobject, name=f'_{arg.name}')
 
     builder.writeln('return cls({})', ', '.join(
         '{0}=_{0}'.format(a.name) for a in tlobject.real_args))
@@ -456,7 +460,7 @@ def _write_arg_to_bytes(builder, arg, tlobject, name=None):
                     fmt = '(0 if {0} is None else {1})'
                 else:
                     fmt = '(0 if {0} is None or {0} is False else {1})'
-                return fmt.format('self.{}'.format(flag.name), 1 << flag.flag_index)
+                return fmt.format(f'self.{flag.name}', 1 << flag.flag_index)
 
             builder.write("struct.pack('<I', ")
             builder.write(
@@ -541,7 +545,7 @@ def _write_arg_read_code(builder, arg, tlobject, name):
     if arg.is_flag:
         # Treat 'true' flags as a special case, since they're true if
         # they're set, and nothing else needs to actually be read.
-        if 'true' == arg.type:
+        if arg.type == 'true':
             builder.writeln('{} = bool(flags & {})',
                             name, 1 << arg.flag_index)
             return
@@ -570,7 +574,7 @@ def _write_arg_read_code(builder, arg, tlobject, name):
         builder.writeln('flags = reader.read_int()')
         builder.writeln()
 
-    elif 'int' == arg.type:
+    elif arg.type == 'int':
         # User IDs are becoming larger than 2³¹ - 1, which would translate
         # into reading a negative ID, which we would treat as a chat. So
         # special case them to read unsigned. See https://t.me/BotNews/57.
@@ -579,58 +583,58 @@ def _write_arg_read_code(builder, arg, tlobject, name):
         else:
             builder.writeln('{} = reader.read_int()', name)
 
-    elif 'long' == arg.type:
+    elif arg.type == 'long':
         builder.writeln('{} = reader.read_long()', name)
 
-    elif 'int128' == arg.type:
+    elif arg.type == 'int128':
         builder.writeln('{} = reader.read_large_int(bits=128)', name)
 
-    elif 'int256' == arg.type:
+    elif arg.type == 'int256':
         builder.writeln('{} = reader.read_large_int(bits=256)', name)
 
-    elif 'double' == arg.type:
+    elif arg.type == 'double':
         builder.writeln('{} = reader.read_double()', name)
 
-    elif 'string' == arg.type:
+    elif arg.type == 'string':
         builder.writeln('{} = reader.tgread_string()', name)
 
-    elif 'Bool' == arg.type:
+    elif arg.type == 'Bool':
         builder.writeln('{} = reader.tgread_bool()', name)
 
-    elif 'true' == arg.type:
+    elif arg.type == 'true':
         # Arbitrary not-None value, don't actually read "true" flags
         builder.writeln('{} = True', name)
 
-    elif 'bytes' == arg.type:
+    elif arg.type == 'bytes':
         builder.writeln('{} = reader.tgread_bytes()', name)
 
-    elif 'date' == arg.type:  # Custom format
+    elif arg.type == 'date':  # Custom format
         builder.writeln('{} = reader.tgread_date()', name)
 
+    elif arg.skip_constructor_id:
+        # Import the correct type inline to avoid cyclic imports.
+        # There may be better solutions so that we can just access
+        # all the types before the files have been parsed, but I
+        # don't know of any.
+        sep_index = arg.type.find('.')
+        ns, t = (
+            ('.', arg.type)
+            if sep_index == -1
+            else (f'.{arg.type[:sep_index]}', arg.type[sep_index + 1 :])
+        )
+
+        class_name = snake_to_camel_case(t)
+
+        # There would be no need to import the type if we're in the
+        # file with the same namespace, but since it does no harm
+        # and we don't have information about such thing in the
+        # method we just ignore that case.
+        builder.writeln('from {} import {}', ns, class_name)
+        builder.writeln('{} = {}._from_reader(reader)',
+                        name, class_name)
+
     else:
-        # Else it may be a custom type
-        if not arg.skip_constructor_id:
-            builder.writeln('{} = reader.tgread_object()', name)
-        else:
-            # Import the correct type inline to avoid cyclic imports.
-            # There may be better solutions so that we can just access
-            # all the types before the files have been parsed, but I
-            # don't know of any.
-            sep_index = arg.type.find('.')
-            if sep_index == -1:
-                ns, t = '.', arg.type
-            else:
-                ns, t = '.' + arg.type[:sep_index], arg.type[sep_index+1:]
-            class_name = snake_to_camel_case(t)
-
-            # There would be no need to import the type if we're in the
-            # file with the same namespace, but since it does no harm
-            # and we don't have information about such thing in the
-            # method we just ignore that case.
-            builder.writeln('from {} import {}', ns, class_name)
-            builder.writeln('{} = {}._from_reader(reader)',
-                            name, class_name)
-
+        builder.writeln('{} = reader.tgread_object()', name)
     # End vector and flag blocks if required (if we opened them before)
     if arg.is_vector:
         builder.end_block()
@@ -684,8 +688,15 @@ def generate_tlobjects(tlobjects, layer, input_mod, output_dir):
 
     _write_modules(output_dir, input_mod, 'TLObject',
                    namespace_types, type_constructors, layer, tlobjects)
-    _write_modules(output_dir / 'fn', input_mod + '.fn', 'TLRequest',
-                   namespace_functions, type_constructors, layer, tlobjects)
+    _write_modules(
+        output_dir / 'fn',
+        f'{input_mod}.fn',
+        'TLRequest',
+        namespace_functions,
+        type_constructors,
+        layer,
+        tlobjects,
+    )
 
 
 def clean_tlobjects(output_dir):

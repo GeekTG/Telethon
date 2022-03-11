@@ -43,11 +43,9 @@ def expand_inline_and_html(tokens):
         if token.type == 'inline':
             yield from expand_inline_and_html(token.children)
         elif token.type == 'html_inline':
-            match = TAG_PATTERN.match(token.content)
-            if match:
+            if match := TAG_PATTERN.match(token.content):
                 close, tag = match.groups()
-                tys = HTML_TO_TYPE.get(tag.lower())
-                if tys:
+                if tys := HTML_TO_TYPE.get(tag.lower()):
                     token.type = tys[bool(close)]
                     token.nesting = -1 if close else 1
                     yield token
@@ -139,20 +137,14 @@ def unparse(text, entities):
     for entity in entities:
         s = entity.offset
         e = entity.offset + entity.length
-        delimiter = DELIMITERS.get(type(entity), None)
-        if delimiter:
-            insert_at.append((s, delimiter[0]))
-            insert_at.append((e, delimiter[1]))
+        if delimiter := DELIMITERS.get(type(entity), None):
+            insert_at.extend(((s, delimiter[0]), (e, delimiter[1])))
         elif isinstance(entity, _tl.MessageEntityPre):
-            insert_at.append((s, f'```{entity.language}\n'))
-            insert_at.append((e, '```\n'))
+            insert_at.extend(((s, f'```{entity.language}\n'), (e, '```\n')))
         elif isinstance(entity, _tl.MessageEntityTextUrl):
-            insert_at.append((s, '['))
-            insert_at.append((e, f']({entity.url})'))
+            insert_at.extend(((s, '['), (e, f']({entity.url})')))
         elif isinstance(entity, _tl.MessageEntityMentionName):
-            insert_at.append((s, '['))
-            insert_at.append((e, f'](tg://user?id={entity.user_id})'))
-
+            insert_at.extend(((s, '['), (e, f'](tg://user?id={entity.user_id})')))
     insert_at.sort(key=lambda t: t[0])
     while insert_at:
         at, what = insert_at.pop()

@@ -41,13 +41,11 @@ class _DirectDownloadIter(requestiter.RequestIter):
         self._timed_out = False
 
         self._exported = dc_id and self.client._session_state.dc_id != dc_id
-        if not self._exported:
-            # The used sender will also change if ``FileMigrateError`` occurs
-            self._sender = self.client._sender
-        else:
-            # If this raises DcIdInvalidError, it means we tried exporting the same DC we're in.
-            # This should not happen, but if it does, it's a bug.
-            self._sender = await self.client._borrow_exported_sender(dc_id)
+        self._sender = (
+            await self.client._borrow_exported_sender(dc_id)
+            if self._exported
+            else self.client._sender
+        )
 
     async def _load_next_chunk(self):
         cur = await self._request()
@@ -199,35 +197,32 @@ async def download_profile_photo(
         if not hasattr(entity, 'photo'):
             # Special case: may be a ChatFull with photo:Photo
             # This is different from a normal UserProfilePhoto and Chat
-            if not hasattr(entity, 'chat_photo'):
-                return None
-
             return await _download_photo(
                 self, entity.chat_photo, file, date=None,
                 thumb=thumb, progress_callback=progress_callback
-            )
-
-        for attr in ('username', 'first_name', 'title'):
-            possible_names.append(getattr(entity, attr, None))
+            ) if hasattr(entity, 'chat_photo') else None
+        possible_names.extend(
+            getattr(entity, attr, None)
+            for attr in ('username', 'first_name', 'title')
+        )
 
         photo = entity.photo
 
-    if isinstance(photo, (_tl.UserProfilePhoto, _tl.ChatPhoto)):
-        thumb = enums.Size.ORIGINAL if thumb == () else enums.Size(thumb)
-
-        dc_id = photo.dc_id
-        loc = _tl.InputPeerPhotoFileLocation(
-            peer=await self._get_input_peer(entity),
-            photo_id=photo.photo_id,
-            big=thumb >= enums.Size.LARGE
-        )
-    else:
+    if not isinstance(photo, (_tl.UserProfilePhoto, _tl.ChatPhoto)):
         # It doesn't make any sense to check if `photo` can be used
         # as input location, because then this method would be able
         # to "download the profile photo of a message", i.e. its
         # media which should be done with `download_media` instead.
         return None
 
+    thumb = enums.Size.ORIGINAL if thumb == () else enums.Size(thumb)
+
+    dc_id = photo.dc_id
+    loc = _tl.InputPeerPhotoFileLocation(
+        peer=await self._get_input_peer(entity),
+        photo_id=photo.photo_id,
+        big=thumb >= enums.Size.LARGE
+    )
     file = _get_proper_filename(
         file, 'profile_photo', '.jpg',
         possible_names=possible_names
@@ -246,16 +241,15 @@ async def download_profile_photo(
         # The fix seems to be using the full channel chat photo.
         ie = await self._get_input_peer(entity)
         ty = helpers._entity_type(ie)
-        if ty == helpers._EntityType.CHANNEL:
-            full = await self(_tl.fn.channels.GetFullChannel(ie))
-            return await _download_photo(
-                self, full.full_chat.chat_photo, file,
-                date=None, progress_callback=progress_callback,
-                thumb=thumb
-            )
-        else:
+        if ty != helpers._EntityType.CHANNEL:
             # Until there's a report for chats, no need to.
             return None
+        full = await self(_tl.fn.channels.GetFullChannel(ie))
+        return await _download_photo(
+            self, full.full_chat.chat_photo, file,
+            date=None, progress_callback=progress_callback,
+            thumb=thumb
+        )
 
 async def download_media(
         self: 'TelegramClient',
@@ -279,14 +273,15 @@ async def download_media(
         date = datetime.datetime.now()
         media = message
 
-    if isinstance(media, _tl.MessageService):
-        if isinstance(message.action,
-                        _tl.MessageActionChatEditPhoto):
-            media = media.photo
+    if isinstance(media, _tl.MessageService) and isinstance(
+        message.action, _tl.MessageActionChatEditPhoto
+    ):
+        media = media.photo
 
-    if isinstance(media, _tl.MessageMediaWebPage):
-        if isinstance(media.webpage, _tl.WebPage):
-            media = media.webpage.document or media.webpage.photo
+    if isinstance(media, _tl.MessageMediaWebPage) and isinstance(
+        media.webpage, _tl.WebPage
+    ):
+        media = media.webpage.document or media.webpage.photo
 
     if isinstance(media, (_tl.MessageMediaPhoto, _tl.Photo)):
         return await _download_photo(
@@ -358,11 +353,7 @@ async def _download_file(
     """
 
     if not part_size_kb:
-        if not file_size:
-            part_size_kb = 64  # Reasonable default
-        else:
-            part_size_kb = utils.get_appropriated_part_size(file_size)
-
+        part_size_kb = utils.get_appropriated_part_size(file_size) if file_size else 64
     part_size = int(part_size_kb * 1024)
     if part_size % MIN_CHUNK_SIZE != 0:
         raise ValueError(
@@ -578,9 +569,7 @@ def _get_kind_and_names(attributes):
         elif isinstance(attr, _tl.DocumentAttributeAudio):
             kind = 'audio'
             if attr.performer and attr.title:
-                possible_names.append('{} - {}'.format(
-                    attr.performer, attr.title
-                ))
+                possible_names.append(f'{attr.performer} - {attr.title}')
             elif attr.performer:
                 possible_names.append(attr.performer)
             elif attr.title:
@@ -765,7 +754,7 @@ def _get_proper_filename(file, kind, extension,
 
     i = 1
     while True:
-        result = os.path.join(directory, '{} ({}){}'.format(name, i, ext))
+        result = os.path.join(directory, f'{name} ({i}){ext}')
         if not os.path.isfile(result):
             return result
         i += 1

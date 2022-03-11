@@ -173,8 +173,10 @@ async def _send_album(self: 'TelegramClient', entity, files, caption='',
         caption = (caption,)
 
     captions = []
-    for c in reversed(caption):  # Pop from the end (so reverse)
-        captions.append(await self._parse_message_text(c or '', parse_mode))
+    captions.extend(
+        await self._parse_message_text(c or '', parse_mode)
+        for c in reversed(caption)
+    )
 
     reply_to = utils.get_message_id(reply_to)
 
@@ -202,10 +204,7 @@ async def _send_album(self: 'TelegramClient', entity, files, caption='',
             fm = utils.get_input_media(
                 r.document, supports_streaming=supports_streaming)
 
-        if captions:
-            caption, msg_entities = captions.pop()
-        else:
-            caption, msg_entities = '', None
+        caption, msg_entities = captions.pop() if captions else ('', None)
         media.append(_tl.InputSingleMedia(
             fm,
             message=caption,
@@ -355,15 +354,17 @@ async def upload_file(
 
             if not isinstance(part, bytes):
                 raise TypeError(
-                    'file descriptor returned {}, not bytes (you must '
-                    'open the file in bytes mode)'.format(type(part)))
+                    f'file descriptor returned {type(part)}, not bytes (you must open the file in bytes mode)'
+                )
+
 
             # `file_size` could be wrong in which case `part` may not be
             # `part_size` before reaching the end.
             if len(part) != part_size and part_index < part_count - 1:
                 raise ValueError(
-                    'read less than {} before reaching the end; either '
-                    '`file_size` or `read` are wrong'.format(part_size))
+                    f'read less than {part_size} before reaching the end; either `file_size` or `read` are wrong'
+                )
+
 
             pos += len(part)
 
@@ -387,15 +388,13 @@ async def upload_file(
                     file_id, part_index, part)
 
             result = await self(request)
-            if result:
-                self._log[__name__].debug('Uploaded %d/%d',
-                                            part_index + 1, part_count)
-                if progress_callback:
-                    await helpers._maybe_await(progress_callback(pos, file_size))
-            else:
-                raise RuntimeError(
-                    'Failed to upload file part {}.'.format(part_index))
+            if not result:
+                raise RuntimeError(f'Failed to upload file part {part_index}.')
 
+            self._log[__name__].debug('Uploaded %d/%d',
+                                        part_index + 1, part_count)
+            if progress_callback:
+                await helpers._maybe_await(progress_callback(pos, file_size))
     if is_big:
         return _tl.InputFileBig(file_id, part_count, file_name)
     else:

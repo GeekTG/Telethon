@@ -159,9 +159,9 @@ async def _start(
         attempts += 1
     else:
         raise RuntimeError(
-            '{} consecutive sign-in attempts failed. Aborting'
-            .format(max_attempts)
+            f'{max_attempts} consecutive sign-in attempts failed. Aborting'
         )
+
 
     if two_step_detected:
         if not password:

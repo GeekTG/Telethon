@@ -99,7 +99,7 @@ class QrLogin:
 
         The URL simply consists of `token` base64-encoded.
         """
-        return 'tg://login?token={}'.format(base64.urlsafe_b64encode(self._qr.token).decode('utf-8').rstrip('='))
+        return f"tg://login?token={base64.urlsafe_b64encode(self._qr.token).decode('utf-8').rstrip('=')}"
 
     @property
     def timeout(self):

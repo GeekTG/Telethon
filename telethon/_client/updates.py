@@ -176,16 +176,16 @@ async def _update_loop(self: 'TelegramClient'):
                 await _dispatch(self, *updates_to_dispatch.popleft())
                 continue
 
-            get_diff = self._message_box.get_difference()
-            if get_diff:
+            if get_diff := self._message_box.get_difference():
                 self._log[__name__].info('Getting difference for account updates')
                 diff = await self(get_diff)
                 updates, users, chats = self._message_box.apply_difference(diff, self._entity_cache)
                 updates_to_dispatch.extend(_preprocess_updates(self, updates, users, chats))
                 continue
 
-            get_diff = self._message_box.get_channel_difference(self._entity_cache)
-            if get_diff:
+            if get_diff := self._message_box.get_channel_difference(
+                self._entity_cache
+            ):
                 self._log[__name__].info('Getting difference for channel updates')
                 diff = await self(get_diff)
                 updates, users, chats = self._message_box.apply_channel_difference(get_diff, diff, self._entity_cache)

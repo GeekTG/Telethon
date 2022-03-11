@@ -46,11 +46,11 @@ class RpcError(Exception):
         reason = ''
         while isinstance(request, _NESTS_QUERY):
             n += 1
-            reason += request.__class__.__name__ + '('
+            reason += f'{request.__class__.__name__}('
             request = request.query
         reason += request.__class__.__name__ + ')' * n
 
-        return ', request={}'.format(reason)
+        return f', request={reason}'
 
     def __reduce__(self):
         return type(self), (self.request, self.message, self.code)

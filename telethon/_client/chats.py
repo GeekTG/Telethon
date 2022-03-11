@@ -94,12 +94,7 @@ class _ChatAction:
 
 class _ParticipantsIter(requestiter.RequestIter):
     async def _init(self, entity, filter, search):
-        if not filter:
-            if search:
-                filter = _tl.ChannelParticipantsSearch(search)
-            else:
-                filter = _tl.ChannelParticipantsRecent()
-        else:
+        if filter:
             filter = enums.Participant(filter)
             if filter == enums.Participant.ADMIN:
                 filter = _tl.ChannelParticipantsAdmins()
@@ -114,6 +109,10 @@ class _ParticipantsIter(requestiter.RequestIter):
             else:
                 raise RuntimeError('unhandled enum variant')
 
+        elif search:
+            filter = _tl.ChannelParticipantsSearch(search)
+        else:
+            filter = _tl.ChannelParticipantsRecent()
         entity = await self.client._get_input_peer(entity)
         ty = helpers._entity_type(entity)
         if search and (filter or ty != helpers._EntityType.CHANNEL):
@@ -243,9 +242,7 @@ class _AdminLogIter(requestiter.RequestIter):
             if not utils.is_list_like(admins):
                 admins = (admins,)
 
-            for admin in admins:
-                admin_list.append(await self.client._get_input_peer(admin))
-
+            admin_list.extend(await self.client._get_input_peer(admin) for admin in admins)
         self.request = _tl.fn.channels.GetAdminLog(
             self.entity, q=search or '', min_id=min_id, max_id=max_id,
             limit=0, events_filter=events_filter, admins=admin_list or None
@@ -626,9 +623,8 @@ async def get_permissions(
 ) -> 'typing.Optional[_custom.ParticipantPermissions]':
     entity = await self.get_profile(chat)
 
-    if not user:
-        if helpers._entity_type(entity) != helpers._EntityType.USER:
-            return entity.default_banned_rights
+    if not user and helpers._entity_type(entity) != helpers._EntityType.USER:
+        return entity.default_banned_rights
 
     entity = await self._get_input_peer(entity)
     user = await self._get_input_peer(user)

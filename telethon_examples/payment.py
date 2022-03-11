@@ -45,17 +45,12 @@ bot = TelegramClient(
 # If we don't `SetBotPrecheckoutResults`, money won't be charged from buyer, and nothing will happen next.
 @bot.on(events.Raw(_tl.UpdateBotPrecheckoutQuery))
 async def payment_pre_checkout_handler(event: _tl.UpdateBotPrecheckoutQuery):
-    if event.payload.decode('UTF-8') == 'product A':
+    if (
+        event.payload.decode('UTF-8') == 'product A'
+        or event.payload.decode('UTF-8') != 'product A'
+        and event.payload.decode('UTF-8') == 'product B'
+    ):
         # so we have to confirm payment
-        await bot(
-            _tl.fn.messages.SetBotPrecheckoutResults(
-                query_id=event.query_id,
-                success=True,
-                error=None
-            )
-        )
-    elif event.payload.decode('UTF-8') == 'product B':
-        # same for another
         await bot(
             _tl.fn.messages.SetBotPrecheckoutResults(
                 query_id=event.query_id,

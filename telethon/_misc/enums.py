@@ -3,10 +3,11 @@ from enum import Enum
 
 def _impl_op(which):
     def op(self, other):
-        if not isinstance(other, type(self)):
-            return NotImplemented
-
-        return getattr(self._val(), which)(other._val())
+        return (
+            getattr(self._val(), which)(other._val())
+            if isinstance(other, type(self))
+            else NotImplemented
+        )
 
     return op
 

@@ -23,15 +23,14 @@ def _get_file_name(tlobject):
     # Courtesy of http://stackoverflow.com/a/1176023/4759433
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     result = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
-    return '{}.html'.format(result)
+    return f'{result}.html'
 
 
 def get_import_code(tlobject):
     """``TLObject -> from ... import ...``."""
     kind = 'functions' if tlobject.is_function else 'types'
-    ns = '.' + tlobject.namespace if tlobject.namespace else ''
-    return 'from telethon.tl.{}{} import {}'\
-        .format(kind, ns, tlobject.class_name)
+    ns = f'.{tlobject.namespace}' if tlobject.namespace else ''
+    return f'from telethon.tl.{kind}{ns} import {tlobject.class_name}'
 
 
 def _get_path_for(tlobject):
@@ -117,12 +116,15 @@ def _generate_index(folder, paths,
                          .replace(os.path.sep, '/').title())
 
         if bots_index:
-            docs.write_text('These are the methods that you may be able to '
-                            'use as a bot. Click <a href="{}">here</a> to '
-                            'view them all.'.format(INDEX))
+            docs.write_text(
+                f'These are the methods that you may be able to use as a bot. Click <a href="{INDEX}">here</a> to view them all.'
+            )
+
         else:
-            docs.write_text('Click <a href="{}">here</a> to view the methods '
-                            'that you can use as a bot.'.format(BOT_INDEX))
+            docs.write_text(
+                f'Click <a href="{BOT_INDEX}">here</a> to view the methods that you can use as a bot.'
+            )
+
         if namespaces:
             docs.write_title('Namespaces', level=3)
             docs.begin_table(4)
@@ -131,9 +133,11 @@ def _generate_index(folder, paths,
                 # For every namespace, also write the index of it
                 namespace_paths = []
                 if bots_index:
-                    for item in bots_index_paths:
-                        if item.parent == namespace:
-                            namespace_paths.append(item)
+                    namespace_paths.extend(
+                        item
+                        for item in bots_index_paths
+                        if item.parent == namespace
+                    )
 
                 _generate_index(namespace, paths,
                                 bots_index, namespace_paths)
@@ -576,17 +580,17 @@ def _write_html_pages(tlobjects, methods, layer, input_res):
         for x in xs:
             zs[x.class_name] = x.class_name in zs
         return ', '.join(
-            '"{}.{}"'.format(x.namespace, x.class_name)
+            f'"{x.namespace}.{x.class_name}"'
             if zs[x.class_name] and x.namespace
-            else '"{}"'.format(x.class_name) for x in xs
+            else f'"{x.class_name}"'
+            for x in xs
         )
 
     request_names = fmt(methods)
     constructor_names = fmt(cs)
 
     def fmt(xs, formatter):
-        return ', '.join('"{}"'.format(
-            formatter(x)).replace(os.path.sep, '/') for x in xs)
+        return ', '.join(f'"{formatter(x)}"'.replace(os.path.sep, '/') for x in xs)
 
     type_names = fmt(types, formatter=lambda x: x)
 

@@ -41,17 +41,15 @@ class _MessagesIter(requestiter.RequestIter):
         # and simply stopping once we hit a message with ID <= min_id.
         if self.reverse:
             offset_id = max(offset_id, min_id)
-            if offset_id and max_id:
-                if max_id - offset_id <= 1:
-                    raise StopAsyncIteration
+            if offset_id and max_id and max_id - offset_id <= 1:
+                raise StopAsyncIteration
 
             if not max_id:
                 max_id = float('inf')
         else:
             offset_id = max(offset_id, max_id)
-            if offset_id and min_id:
-                if offset_id - min_id <= 1:
-                    raise StopAsyncIteration
+            if offset_id and min_id and offset_id - min_id <= 1:
+                raise StopAsyncIteration
 
         if self.reverse:
             if offset_id:
@@ -228,14 +226,12 @@ class _MessagesIter(requestiter.RequestIter):
         Determine whether the given message is in the range or
         it should be ignored (and avoid loading more chunks).
         """
-        # No entity means message IDs between chats may vary
         if self.entity:
             if self.reverse:
                 if message.id <= self.last_id or message.id >= self.max_id:
                     return False
-            else:
-                if message.id >= self.last_id or message.id <= self.min_id:
-                    return False
+            elif message.id >= self.last_id or message.id <= self.min_id:
+                return False
 
         return True
 
@@ -558,7 +554,7 @@ async def forward_messages(
         elif isinstance(m, _tl.Message):
             return m.chat_id
         else:
-            raise TypeError('Cannot forward messages of type {}'.format(type(m)))
+            raise TypeError(f'Cannot forward messages of type {type(m)}')
 
     sent = []
     for _chat_id, chunk in itertools.groupby(messages, key=get_key):
@@ -623,15 +619,14 @@ async def edit_message(
         # Invoke `messages.editInlineBotMessage` from the right datacenter.
         # Otherwise, Telegram will error with `MESSAGE_ID_INVALID` and do nothing.
         exported = self._session_state.dc_id != entity.dc_id
-        if exported:
-            try:
-                sender = await self._borrow_exported_sender(entity.dc_id)
-                return await self._call(sender, request)
-            finally:
-                await self._return_exported_sender(sender)
-        else:
+        if not exported:
             return await self(request)
 
+        try:
+            sender = await self._borrow_exported_sender(entity.dc_id)
+            return await self._call(sender, request)
+        finally:
+            await self._return_exported_sender(sender)
     entity = await self._get_input_peer(dialog)
     request = _tl.fn.messages.EditMessage(
         peer=entity,
@@ -643,8 +638,7 @@ async def edit_message(
         reply_markup=_custom.button.build_reply_markup(buttons),
         schedule_date=schedule
     )
-    msg = self._get_response_message(request, await self(request), entity)
-    return msg
+    return self._get_response_message(request, await self(request), entity)
 
 async def delete_messages(
         self: 'TelegramClient',
@@ -696,14 +690,15 @@ async def mark_read(
     if clear_reactions:
         await self(_tl.fn.messages.ReadReactions(entity))
 
-    if helpers._entity_type(entity) == helpers._EntityType.CHANNEL:
-        return await self(_tl.fn.channels.ReadHistory(
-            utils.get_input_channel(entity), max_id=max_id))
-    else:
-        return await self(_tl.fn.messages.ReadHistory(
-            entity, max_id=max_id))
-
-    return False
+    return (
+        await self(
+            _tl.fn.channels.ReadHistory(
+                utils.get_input_channel(entity), max_id=max_id
+            )
+        )
+        if helpers._entity_type(entity) == helpers._EntityType.CHANNEL
+        else await self(_tl.fn.messages.ReadHistory(entity, max_id=max_id))
+    )
 
 async def pin_message(
         self: 'TelegramClient',
